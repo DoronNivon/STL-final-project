@@ -1,4 +1,3 @@
-from IPython.core.display_functions import display
 
 if __name__ == '__main__':
     #Import Libraries
@@ -23,6 +22,7 @@ if __name__ == '__main__':
     from sklearn.preprocessing import StandardScaler
     from mlxtend.feature_selection import SequentialFeatureSelector as SFS
     from sklearn.ensemble import RandomForestClassifier
+    from IPython.core.display_functions import display
 
     # Read the data CSV - ----Make sure to replace the path to the one in your computer----
     df = pd.read_csv("/Users/doron/Documents/warehouse_data.csv")
