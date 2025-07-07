@@ -258,7 +258,6 @@ if __name__ == '__main__':
 
 
     # Apply the RGB grid feature extractor to each image (produces a list of 4x4x3 = 48 features per image)
-
     # Train data
     train_grid_features = train_df['image_array_resized'].apply(
         lambda img: extract_rgb_grid_features(img, grid_size=(4, 4)))
@@ -672,28 +671,51 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------------------------
     #                                    GradientBoostingClassifier
     # ------------------------------------------------------------------------------------------
-
     from sklearn.metrics import accuracy_score, roc_auc_score
-
     from sklearn.ensemble import GradientBoostingClassifier
-    # 3. Fit Gradient Boosting Model
-    clf = GradientBoostingClassifier(n_estimators=100,  # 100 decision trees (n_estimators)
-                                     learning_rate=0.1, # shrinkage parameter - This controls the rate at which boosting learns
-                                     max_depth=3,       # Maximum depth of the individual regression estimators.
-                                     random_state=42)
-    clf.fit(X_train, y_train)
+    from sklearn.model_selection import GridSearchCV
 
-    # 4. Predict and evaluate
-    y_pred_clf = clf.predict(X_test)
-    y_proba_clf = clf.predict_proba(X_test)[:, 1]
+    # Define the parameter grid for number of trees (and optionally learning rate)
+    param_grid_gb = {
+        'n_estimators': list(range(50, 301, 50)),
+        'learning_rate': [0.1], # shrinkage parameter - This controls the rate at which boosting learns
+        'max_depth': [3]  # Maximum depth of the individual regression estimators.
+    }
+
+    # Base model
+    gb_model = GradientBoostingClassifier(random_state=42)
+
+    # GridSearchCV to find the best number of estimators
+    grid_search = GridSearchCV(
+        estimator=gb_model,
+        param_grid=param_grid_gb,
+        cv=5,  # 5-fold cross-validation
+        scoring='accuracy',
+        n_jobs=-1
+    )
+
+    # Fit model to training data
+    grid_search.fit(X_train, y_train)
+
+    # Get the best model after cross-validation
+    gb_clf = grid_search.best_estimator_
+
+    # -------------------- Predict and Evaluate --------------------
+
+    y_pred_gb_clf = gb_clf.predict(X_test)
+    y_proba_gb_clf = gb_clf.predict_proba(X_test)[:, 1]
 
     print("Gradient Boosting Results:")
-    print("Accuracy:", accuracy_score(y_test, y_pred_clf))
-    print("AUC:", roc_auc_score(y_test, y_proba_clf))
+    print("Best number of trees (n_estimators):", grid_search.best_params_['n_estimators'])
+    print("Accuracy:", accuracy_score(y_test, y_pred_gb_clf))
+    print("AUC:", roc_auc_score(y_test, y_proba_gb_clf))
 
-    # Feature importance for Gradient Boosting
-    importances_clf = clf.feature_importances_
-    gb_feature_importance = pd.Series(importances_clf, index=X_train.columns).sort_values(ascending=False)
+
+    # -------------------- Feature Importance --------------------
+
+    importances_gb_clf = gb_clf.feature_importances_
+    gb_feature_importance = pd.Series(importances_gb_clf, index=X_train.columns).sort_values(ascending=False)
+
     print("Feature importance Gradient Boosting:")
     print(gb_feature_importance)
 
@@ -702,20 +724,27 @@ if __name__ == '__main__':
 
     # Plot a horizontal bar chart of the top N feature importances
     plt.figure(figsize=(10, 6))
-    sns.barplot(x=gb_feature_importance.head(top_n), y=gb_feature_importance.head(top_n).index,hue=gb_feature_importance.head(top_n), palette="viridis", legend = False)
+    sns.barplot(
+    x=gb_feature_importance.head(top_n),
+    y=gb_feature_importance.head(top_n).index,
+    hue=gb_feature_importance.head(top_n),
+    palette="viridis",
+    legend=False
+    )
     plt.title(f'Top {top_n} Feature Importances - Gradient Boosting')
     plt.xlabel('Importance Score')
     plt.ylabel('Feature')
     plt.tight_layout()
     plt.show(block=False)
 
+
     # ----------------------------   # Metrics for comparison #   ----------------------------
-    accuracy_clf = accuracy_score(y_test, y_pred_clf)
-    preci_clf = precision_score(y_test, y_pred_clf)
-    recal_clf = recall_score(y_test, y_pred_clf)
-    f1_clf = f1_score(y_test, y_pred_clf)
-    y_proba_clf = clf.predict_proba(X_test)[:, 1]
-    auc_clf = roc_auc_score(y_test, y_proba_clf)
+    accuracy_gb_clf = accuracy_score(y_test, y_pred_gb_clf)
+    preci_gb_clf = precision_score(y_test, y_pred_gb_clf)
+    recal_gb_clf = recall_score(y_test, y_pred_gb_clf)
+    f1_gb_clf = f1_score(y_test, y_pred_gb_clf)
+    y_proba_gb_clf = gb_clf.predict_proba(X_test)[:, 1]
+    auc_gb_clf = roc_auc_score(y_test, y_proba_gb_clf)
 
     # ------------------------------------------------------------------------------------------
     #                                    Support Vector Machine
@@ -723,30 +752,62 @@ if __name__ == '__main__':
 
     from sklearn.svm import SVC
     from sklearn.metrics import accuracy_score, roc_auc_score
-
-    # 3. Train SVM classifier (with probability estimates)
-    svm = SVC(kernel='rbf', C=1.0, gamma='scale', probability=True)
-    svm.fit(X_train, y_train)
-
-    # 4. Predict and evaluate
-    y_pred_svm = svm.predict(X_test)
-
-    # permutation_importance
     from sklearn.inspection import permutation_importance
+
+    # Define parameter grid for C and gamma
+    param_grid_svm = {
+        'C': np.logspace(-3, 1, 10),
+        'gamma': np.logspace(-3, 1, 10)}
+
+    # Base SVM model (RBF kernel)
+    svm_model = SVC(kernel='rbf', probability=True)
+
+    # GridSearchCV with 5-fold cross-validation
+    grid_search_svm = GridSearchCV(
+        estimator=svm_model,
+        param_grid=param_grid_svm,
+        scoring='accuracy',  # Can also use 'roc_auc'
+        cv=5,
+        n_jobs=-1
+    )
+
+    # Fit model to training data
+    grid_search_svm.fit(X_train, y_train)
+
+    # Get the best SVM model
+    svm = grid_search_svm.best_estimator_
+
+    # -------------------- Predict and Evaluate --------------------
+
+    y_pred_svm = svm.predict(X_test)
+    y_proba_svm = svm.predict_proba(X_test)[:, 1]
+
+    print("SVM Results (RBF kernel):")
+    print("Best parameters:", grid_search_svm.best_params_)
+    print("Accuracy:", accuracy_score(y_test, y_pred_svm))
+    print("AUC:", roc_auc_score(y_test, y_proba_svm))
+
+    # -------------------- Permutation Feature Importance --------------------
 
     result_svm = permutation_importance(svm, X_test, y_test, n_repeats=10, random_state=42)
     svm_importance = pd.Series(result_svm.importances_mean, index=X_test.columns).sort_values(ascending=False)
+
     print("Feature importance SVM:")
     print(svm_importance)
 
-    # Choose how many top features to display
+    # Optional: plot top N important features
     top_n = 3
 
-    # Plot a horizontal bar chart of the top N feature importances
-    plt.figure(figsize=(10, 2))
-    sns.barplot(x=svm_importance.head(top_n), y=svm_importance.head(top_n).index,hue=svm_importance.head(top_n).index ,palette="viridis",legend = False)
-    plt.title(f'Top {top_n} Feature Importances - SVM')
-    plt.xlabel('Importance Score')
+    plt.figure(figsize=(10, 6))
+    sns.barplot(
+        x=svm_importance.head(top_n),
+        y=svm_importance.head(top_n).index,
+        hue=svm_importance.head(top_n),
+        palette="plasma",
+        legend=False
+    )
+    plt.title(f'Top {top_n} Feature Importances - SVM (Permutation Importance)')
+    plt.xlabel('Mean Importance')
     plt.ylabel('Feature')
     plt.tight_layout()
     plt.show(block=False)
@@ -767,11 +828,11 @@ models = ['Logistic\nRegression', 'Lasso\nRegression', 'Random\nForest',
           'Gradient\nBoosting', 'Support\nVector']
 
 # Metric values for each model
-accuracy = [accuracy_logis, accuracy_logis_lasso, accuracy_rf, accuracy_clf, accuracy_svm]
-precision = [preci_logis, preci_logis_lasso, preci_rf,preci_clf, preci_svm]
-recall = [recall_logis, recal_logis_lasso,recal_rf, recal_clf, recal_svm]
-f1 = [f1_logis, f1_logis_lasso, f1_rf, f1_clf,f1_svm]
-auc = [auc_logis, auc_logis_lasso, auc_rf, auc_clf, auc_svm]
+accuracy = [accuracy_logis, accuracy_logis_lasso, accuracy_rf, accuracy_gb_clf, accuracy_svm]
+precision = [preci_logis, preci_logis_lasso, preci_rf,preci_gb_clf, preci_svm]
+recall = [recall_logis, recal_logis_lasso,recal_rf, recal_gb_clf, recal_svm]
+f1 = [f1_logis, f1_logis_lasso, f1_rf, f1_gb_clf,f1_svm]
+auc = [auc_logis, auc_logis_lasso, auc_rf, auc_gb_clf, auc_svm]
 
 # Set width of bars and positions
 bar_width = 0.15
